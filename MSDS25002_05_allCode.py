@@ -178,6 +178,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 
+
 # ---------------------------------------------------------------------------
 # 1. Data Loader
 # ---------------------------------------------------------------------------
@@ -257,12 +258,25 @@ class GaussianDiffusion:
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
 
+        self.alphas_cumprod_prev = torch.cat(
+            [torch.ones(1, device=device), self.alphas_cumprod[:-1]]
+        )
+
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod)
-        self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
+        self.sqrt_recip_alphas_cumprod = torch.sqrt(1.0 / self.alphas_cumprod)
+        self.sqrt_recipm1_alphas_cumprod = torch.sqrt(1.0 / self.alphas_cumprod - 1.0)
+
+        # Coefficients of the true posterior mean q(x_{t-1} | x_t, x0):
+        # mu = posterior_mean_x0_coef * x0 + posterior_mean_xt_coef * x_t
         self.posterior_variance = (
-            self.betas * (1.0 - torch.cat([self.alphas_cumprod[:1], self.alphas_cumprod[:-1]]))
-            / (1.0 - self.alphas_cumprod)
+            self.betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+        )
+        self.posterior_mean_x0_coef = (
+            self.betas * torch.sqrt(self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+        )
+        self.posterior_mean_xt_coef = (
+            torch.sqrt(self.alphas) * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
         )
 
     def _extract(self, values, t, shape):
@@ -281,13 +295,24 @@ class GaussianDiffusion:
 
     @torch.no_grad()
     def p_sample(self, model, x_t, t):
-        """One reverse step: x_t -> x_{t-1}, using the model's noise prediction."""
-        betas_t = self._extract(self.betas, t, x_t.shape)
-        sqrt_one_minus_t = self._extract(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape)
-        sqrt_recip_alphas_t = self._extract(self.sqrt_recip_alphas, t, x_t.shape)
+        """One reverse step: x_t -> x_{t-1}, using the model's noise prediction.
 
+        The predicted x0 is clipped to the valid [-1, 1] image range before
+        computing the posterior mean. Without this, small per-step errors in
+        the noise prediction (expected from a model trained on very few
+        images) compound over T=1000 steps and the sample drifts off the
+        valid data manifold (observed empirically as all-black outputs).
+        """
         predicted_noise = model(x_t, t)
-        model_mean = sqrt_recip_alphas_t * (x_t - betas_t * predicted_noise / sqrt_one_minus_t)
+
+        sqrt_recip_alphas_cumprod_t = self._extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape)
+        sqrt_recipm1_alphas_cumprod_t = self._extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
+        x0_pred = sqrt_recip_alphas_cumprod_t * x_t - sqrt_recipm1_alphas_cumprod_t * predicted_noise
+        x0_pred = x0_pred.clamp(-1.0, 1.0)
+
+        x0_coef = self._extract(self.posterior_mean_x0_coef, t, x_t.shape)
+        xt_coef = self._extract(self.posterior_mean_xt_coef, t, x_t.shape)
+        model_mean = x0_coef * x0_pred + xt_coef * x_t
 
         if (t == 0).all():
             return model_mean
