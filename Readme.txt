@@ -59,6 +59,21 @@ HOW TO RUN
    It loads saved_models/diffusion_model.pt and runs the reverse diffusion
    process to produce new images.
 
+RESULTS (from the included saved_models/diffusion_model.pt checkpoint)
+-----------------------------------------------------------------------
+- Trained for 200 epochs on 100 images (5 classes x 20 images each, 64x64).
+- Training loss (custom noise-prediction MSE) dropped from ~0.70 at epoch 1
+  to ~0.02-0.03 by epoch 100, then oscillated in that range through epoch 200
+  (see outputs/loss_curve.png).
+- Forward process reaches near-pure Gaussian noise by t~400-500 of 1000
+  steps (see outputs/forward_process.png).
+- Samples generated via the full reverse process (outputs/generated_samples.png)
+  show coherent color/texture patches consistent with the trained animal
+  classes, but not sharp recognizable animal shapes - expected given the
+  very small dataset (100 images) and CPU-only training budget. See
+  Report.pdf section 4-5 for a detailed discussion and a bug we hit and
+  fixed (all-black outputs from reverse-process divergence).
+
 IMPLEMENTATION NOTES
 ---------------------
 - The forward process uses the closed-form DDPM reparameterization
