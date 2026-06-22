@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model checkpoints / large binaries
+saved_models/*.pt
+saved_models/*.pth
+saved_models/*.ckpt
+*.pt
+*.pth
+*.ckpt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs and outputs
+*.log
+outputs/
+
+# Dataset (not to be committed/resubmitted)
+animal_data/
